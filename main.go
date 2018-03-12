@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sync"
 )
 
 type Fetcher interface {
@@ -11,72 +10,29 @@ type Fetcher interface {
 	Fetch(url string) (body string, urls []string, err error)
 }
 
-type UrlCache struct {
-	sync.Mutex
-	urls map[string]bool
-}
-
-func (uc *UrlCache) Add(url string) {
-	uc.Lock()
-	defer uc.Unlock()
-	if _, exists := uc.urls[url]; !exists {
-		uc.urls[url] = true
-	}
-}
-
-func (uc *UrlCache) IsAdded(url string) bool {
-	uc.Lock()
-	defer uc.Unlock()
-	if _, exists := uc.urls[url]; exists {
-		return true
-	}
-	return false
-}
-
-func NewCache() *UrlCache {
-	return &UrlCache{
-		sync.Mutex{},
-		map[string]bool{},
-	}
-}
-
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
-func Crawl(url string, depth int, fetcher Fetcher, urlc *UrlCache, wg sync.WaitGroup) {
+func Crawl(url string, depth int, fetcher Fetcher) {
 	// TODO: Fetch URLs in parallel.
 	// TODO: Don't fetch the same URL twice.
 	// This implementation doesn't do either:
 	if depth <= 0 {
-		wg.Done()
 		return
 	}
-	if !urlc.IsAdded(url) {
-		// if 0 != 1 {
-		body, urls, err := fetcher.Fetch(url)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		// urlc.Add(url)
-		fmt.Printf("found: %s %q\n", url, body)
-		fmt.Println(urls)
-		wg.Add(len(urls))
-		for _, u := range urls {
-			func(_u string) {
-				go Crawl(_u, depth-1, fetcher, urlc, wg)
-			}(u)
-		}
+	body, urls, err := fetcher.Fetch(url)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
-	wg.Done()
+	fmt.Printf("found: %s %q\n", url, body)
+	for _, u := range urls {
+		Crawl(u, depth-1, fetcher)
+	}
 	return
 }
 
 func main() {
-	c := NewCache()
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	Crawl("https://golang.org/", 4, fetcher, c, wg)
-	wg.Wait()
+	Crawl("https://golang.org/", 4, fetcher)
 }
 
 // fakeFetcher is Fetcher that returns canned results.
